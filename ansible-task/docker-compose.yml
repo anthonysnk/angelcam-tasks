@@ -5,6 +5,7 @@ services:
     container_name: ubuntu
     build: .
     tty: true
+    restart: always
     ports:
       - "2222:22"
     volumes:
