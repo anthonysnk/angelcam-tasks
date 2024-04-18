@@ -1,0 +1,57 @@
+---
+- name: Update cache's apt
+  apt:
+    update_cache: yes
+
+- name: Install netstat, mtr, vim, ufw
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - net-tools
+    - mtr-tiny
+    - vim
+    - ufw
+    - nano
+    - python3
+    - python3-pip
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - gnupg
+    - lsb-release
+    - software-properties-common
+    - python3-pip
+    - virtualenv
+    - python3-setuptools
+
+- name: Install python3 library
+  ansible.builtin.command:
+    cmd: pip3 install {{ item }}
+  loop:
+    - requests
+
+- name: Install authorized SSH keys for root user
+  authorized_key:
+    user: root
+    key: "{{ lookup('file', '../../../../id_rsa.pub') }}"
+
+- name: Disable SSH password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^PasswordAuthentication"
+    line: "PasswordAuthentication no"
+  notify: Restart SSH
+
+- name: Configure UFW for ports 80 and 443
+  ansible.builtin.command:
+    cmd: "sudo ufw allow from any to any port {{ item.port }} proto tcp"
+  loop:
+    - { port: 80 }
+    - { port: 443 }
+
+- name: Configure UFW for SSH port 22
+  ansible.builtin.command:
+    cmd: "sudo ufw allow from {{ item.from_ip }} to any port {{ item.port }} proto tcp"
+  loop:
+    - { port: 22, from_ip: "190.87.168.0" }

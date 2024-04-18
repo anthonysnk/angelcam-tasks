@@ -1,0 +1,60 @@
+---
+- name: create Docker network
+  docker_network:
+    name: my_network
+
+- name: Copy nginx proxy configuration file to Ubuntu server
+  ansible.builtin.copy:
+    src: "./nginx_proxy.conf"
+    dest: "/tmp"
+
+- name: Copy nginx proxy dockerfile
+  ansible.builtin.copy:
+    src: "./Dockerfile"
+    dest: "/tmp"
+
+- name: build container image
+  shell: docker build -t my-nginx-proxy /tmp
+
+- name: Deploy Docker containers
+  docker_container:
+    name: "{{ item.name }}"
+    image: "{{ item.image }}"
+    env: "{{ item.env | default({}) }}"
+    restart_policy: always
+    ports: "{{ item.ports | default([]) }}"
+    volumes: "{{ item.volumes | default([]) }}"
+    networks:
+      - name: my_network
+
+  loop:
+    - name: "my-website"
+      image: "nginx:latest"
+      ports: []
+      volumes: []
+
+    - name: "nginx-proxy"
+      image: "my-nginx-proxy"
+      ports: ["8081:80","443:443"]
+      volumes:
+        - "/var/run/docker.sock:/tmp/docker.sock:ro"
+        - "/tmp/certs:/etc/nginx/certs"
+        - "/tmp/vhost:/etc/nginx/vhost.d"
+        - "/tmp/html:/usr/share/nginx/html"
+      env:
+        MY_SUPER_SECRET_1: "{{ MY_SUPER_SECRET_1 }}"
+        MY_SUPER_SECRET_2: "{{ MY_SUPER_SECRET_2 }}"
+      with_items:
+
+    - name: "acme-companion"
+      image: "nginxproxy/acme-companion"
+      ports: []
+      volumes:
+        - "/var/run/docker.sock:/var/run/docker.sock:ro"
+        - "/tmp/acme:/etc/acme.sh"
+        - "/tmp/vhost:/etc/nginx/vhost.d"
+        - "/tmp/certs:/etc/nginx/certs:rw"
+        - "/tmp/html:/usr/share/nginx/html"
+      env:
+        NGINX_PROXY_CONTAINER: "nginx-proxy"
+        DEFAULT_EMAIL: mail@my.super.site.com

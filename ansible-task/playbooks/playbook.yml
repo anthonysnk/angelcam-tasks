@@ -1,0 +1,18 @@
+---
+- name: Angelcam in ubuntu
+  hosts: docker_ubuntu
+  become: true
+  vars_files:
+    - "./secrets/secret_vars.yml"
+  
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    
+  roles:
+    - tools
+    - docker
+    - role: nginx
+      vars_files:
+        - "./secrets/secret_vars.yml"
+    
+
