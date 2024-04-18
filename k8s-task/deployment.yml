@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+          livenessProbe:
+            httpGet:
+              path: / # The path to check for the liveness probe
+              port: 80 # The port to check on
+            initialDelaySeconds: 15 # Wait this many seconds before starting the probe
+            periodSeconds: 10 # Check the probe every 10 seconds
+          readinessProbe:
+            httpGet:
+              path: / # The path to check for the readiness probe
+              port: 80 # The port to check on
+            initialDelaySeconds: 5 # Wait this many seconds before starting the probe
+            periodSeconds: 5 # Check the probe every 5 seconds
+          env:
+            - name: MY_SUPER_SECRET_1
+              valueFrom:
+                secretKeyRef:
+                  name: my-super-secrets
+                  key: my-super-secret-1
+            - name: MY_SUPER_SECRET_2
+              valueFrom:
+                secretKeyRef:
+                  name: my-super-secrets
+                  key: my-super-secret-2
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+            requests:
+              cpu: "0.5"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-super-secrets
+type: Opaque
+data:
+  my-super-secret-1: MTIzNA== # base64 encoded value of MY_SUPER_SECRET_1=1234
+  my-super-secret-2: NTY3OA== # base64 encoded value of MY_SUPER_SECRET_2=5678
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 443
+      targetPort: 80
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: global-ingress-alb
+  annotations:
+    alb.ingress.kubernetes.io/target-type: instance
+    alb.ingress.kubernetes.io/load-balancer-name: global-ingress-alb
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:XXXXXx:certificate/XXXXX
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    kubernetes.io/ingress.class: alb
+spec:
+  ingressClassName: alb
+  defaultBackend:
+    service:
+      name: nginx-service
+      port:
+        number: 443
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-service
+                port:
+                  number: 443
