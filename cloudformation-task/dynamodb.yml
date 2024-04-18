@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+  License: "MIT No Attribution"
+  Description: "AWS CloudFormation Sample Template to demonstrate DynamoDB auto scaling. **WARNING** This template creates an Amazon DynamoDB table. You will be billed for the AWS resources used if you create a stack from this template."
+
+Parameters:
+  TableName:
+    Type: String
+    Default: angelcam
+    Description: DynamoDB Table Name
+  MaxReadCapacityUnits:
+    Type: Number
+    Default: 1000
+    Description: Maximum read capacity units
+  MinReadCapacityUnits:
+    Type: Number
+    Default: 100
+    Description: Minimum read capacity units
+  MaxWriteCapacityUnits:
+    Type: Number
+    Default: 1000
+    Description: Maximum write capacity units
+  MinWriteCapacityUnits:
+    Type: Number
+    Default: 1
+    Description: Minimum write capacity units
+
+Resources:
+  ScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ScalingRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - application-autoscaling.amazonaws.com
+            Action:
+              - sts:AssumeRole
+  ScalingRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      Roles:
+        - !Ref ScalingRole
+      PolicyName: ScalingRolePolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - application-autoscaling:*
+              - dynamodb:DescribeTable
+              - dynamodb:UpdateTable
+              - cloudwatch:PutMetricAlarm
+              - cloudwatch:DescribeAlarms 
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:SetAlarmState
+              - cloudwatch:DeleteAlarms
+            Resource: "*"
+
+  MyDynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: starts_at
+          AttributeType: S
+        - AttributeName: ends_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: starts_at
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: !Ref MinReadCapacityUnits
+        WriteCapacityUnits: !Ref MinWriteCapacityUnits
+
+      LocalSecondaryIndexes:
+        - IndexName: ends_at_index
+          KeySchema:
+            - AttributeName: id
+              KeyType: HASH
+            - AttributeName: ends_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  TableWriteCapacityScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: MyDynamoDBTable
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacityUnits
+      MinCapacity: !Ref MinWriteCapacityUnits
+      ResourceId: !Sub "table/${MyDynamoDBTable}"
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+
+  TableReadCapacityScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacityUnits
+      MinCapacity: !Ref MinReadCapacityUnits
+      ResourceId: !Sub "table/${MyDynamoDBTable}"
+      RoleARN: !GetAtt ScalingRole.Arn
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+
+  TableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: TableWriteScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref TableWriteCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 70
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  TableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: TableReadScalingPolicy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref TableReadCapacityScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 75
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
